@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useRef, useState, useEffect } from "react";
+import RiskCard from "@/Components/RiskCard";
 
 type Txn = {
   id: string;
@@ -465,6 +466,9 @@ export default function DashboardPage() {
                 )}
               </div>
             </div>
+
+            {/* ✅ ADDED: RiskCard */}
+            <RiskCard cashBalance={cashBalance} monthlyBurn={monthlyBurn} emergencyFundTargetMonths={3} />
 
             {/* KPI row */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
