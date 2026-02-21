@@ -30,6 +30,16 @@ function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
 }
 
+function addDays(date: Date, days: number) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+function formatShortDate(d: Date) {
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 /** ======= Brand Mark (Simpler Epsilon) ======= */
 function BrandMark({ className }: { className?: string }) {
   return (
@@ -40,13 +50,14 @@ function BrandMark({ className }: { className?: string }) {
 
       <div className="leading-tight">
         <div className="text-sm font-semibold tracking-wide text-white">Epsilon Finance</div>
-        <div className="text-xs text-white/60">Simple cash safety + auto-save</div>
+        <div className="text-xs text-white/60">Cash risk + emergency fund autopilot</div>
       </div>
     </div>
   );
 }
 
 function Pill({ tone, children }: { tone: RiskTone; children: React.ReactNode }) {
+  // (tone kept for semantic use later if you want different styling)
   return (
     <span className="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1 bg-white/10 text-white ring-white/15">
       {children}
@@ -137,10 +148,7 @@ function Sparkline({ values }: { values: number[] }) {
 function ProgressBar({ value }: { value: number }) {
   return (
     <div className="h-2.5 w-full rounded-full bg-white/[0.06] ring-1 ring-white/10 overflow-hidden print:bg-black/10 print:ring-black/15">
-      <div
-        className="h-full rounded-full bg-white/70 print:bg-black/60"
-        style={{ width: `${clamp(value, 0, 1) * 100}%` }}
-      />
+      <div className="h-full rounded-full bg-white/70 print:bg-black/60" style={{ width: `${clamp(value, 0, 1) * 100}%` }} />
     </div>
   );
 }
@@ -188,18 +196,16 @@ function BellIcon() {
   );
 }
 
-/** ======= Gear Icon (Filled silhouette w/ center hole like your image) ======= */
+/** ======= Gear Icon (Filled silhouette w/ center hole) ======= */
 function GearIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
-      {/* Filled gear with a cut-out center hole (evenodd) */}
       <path
         fillRule="evenodd"
         clipRule="evenodd"
         fill="rgba(255,255,255,0.88)"
         d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.8a.5.5 0 0 0-.49.42l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96a.5.5 0 0 0-.6.22L2.72 8.48a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94L2.84 14.52a.5.5 0 0 0-.12.64l1.92 3.32c.13.23.4.32.64.22l2.39-.96c.49.38 1.03.7 1.62.94l.36 2.54c.04.24.25.42.49.42h3.8c.24 0 .45-.18.49-.42l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.24.1.51.01.64-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58ZM12 15.6a3.6 3.6 0 1 0 0-7.2 3.6 3.6 0 0 0 0 7.2Z"
       />
-      {/* Subtle inner highlight ring to match theme */}
       <circle cx="12" cy="12" r="3.6" fill="rgba(0,0,0,0)" />
     </svg>
   );
@@ -210,9 +216,7 @@ export default function DashboardPage() {
   const [monthlyBurn, setMonthlyBurn] = useState<number>(32000);
   const [autopilotPct, setAutopilotPct] = useState<number>(0.08);
 
-  const [activeTab, setActiveTab] = useState<"Dashboard" | "Autopilot" | "Transactions">(
-    "Dashboard"
-  );
+  const [activeTab, setActiveTab] = useState<"Dashboard" | "Autopilot" | "Transactions">("Dashboard");
 
   const txns: Txn[] = useMemo(
     () => [
@@ -227,61 +231,61 @@ export default function DashboardPage() {
     []
   );
 
-  const runwayMonths = useMemo(
-    () => (monthlyBurn <= 0 ? Infinity : cashBalance / monthlyBurn),
-    [cashBalance, monthlyBurn]
-  );
+  const runwayMonths = useMemo(() => (monthlyBurn <= 0 ? Infinity : cashBalance / monthlyBurn), [cashBalance, monthlyBurn]);
+
+  const runwayDays = useMemo(() => {
+    if (!Number.isFinite(runwayMonths)) return Infinity;
+    return Math.max(0, Math.floor(runwayMonths * 30));
+  }, [runwayMonths]);
+
+  const depletionDate = useMemo(() => {
+    if (!Number.isFinite(runwayDays) || runwayDays === Infinity) return null;
+    return addDays(new Date(), runwayDays);
+  }, [runwayDays]);
 
   const risk = useMemo(() => {
     const r = runwayMonths;
+
     if (!Number.isFinite(r))
       return {
         tone: "good" as const,
         label: "Stable",
-        headline: "Money coming in covers spending",
+        headline: "Cash inflow covers spending",
         msg: "You’re not burning cash right now.",
       };
+
     if (r >= 6)
       return {
         tone: "good" as const,
         label: "Stable",
-        headline: "You have a healthy cushion",
-        msg: "Keep spending steady and keep building your safety fund.",
+        headline: "You have a healthy runway",
+        msg: "Keep spending steady and keep building your emergency buffer.",
       };
+
     if (r >= 3)
       return {
         tone: "warn" as const,
         label: "Watch",
-        headline: "Cushion is getting smaller",
-        msg: "Reduce optional spending and collect money owed sooner.",
+        headline: "Runway is tightening",
+        msg: "Reduce optional spend and collect receivables faster.",
       };
+
     return {
       tone: "danger" as const,
       label: "Act",
-      headline: "Cushion is low",
-      msg: "Cut spending quickly and focus on getting paid faster.",
+      headline: "Runway is low",
+      msg: "Cut discretionary spend and focus on getting paid faster.",
     };
   }, [runwayMonths]);
 
-  // Beginner-friendly: safety fund goal = 3 months of spending
+  // Beginner-friendly: emergency fund goal = 3 months of spending
   const safetyFundGoal = useMemo(() => Math.max(0, monthlyBurn * 3), [monthlyBurn]);
-  const safetyFundProgress = useMemo(
-    () => (safetyFundGoal <= 0 ? 1 : cashBalance / safetyFundGoal),
-    [cashBalance, safetyFundGoal]
-  );
-  const safetyFundGap = useMemo(
-    () => Math.max(0, safetyFundGoal - cashBalance),
-    [safetyFundGoal, cashBalance]
-  );
+  const safetyFundProgress = useMemo(() => (safetyFundGoal <= 0 ? 1 : cashBalance / safetyFundGoal), [cashBalance, safetyFundGoal]);
+  const safetyFundGap = useMemo(() => Math.max(0, safetyFundGoal - cashBalance), [safetyFundGoal, cashBalance]);
 
-  const inflowsLast30 = useMemo(
-    () => txns.filter((t) => t.amount > 0).reduce((a, t) => a + t.amount, 0),
-    [txns]
-  );
-  const autoSaveEstimate = useMemo(
-    () => Math.round(inflowsLast30 * autopilotPct),
-    [inflowsLast30, autopilotPct]
-  );
+  const inflowsLast30 = useMemo(() => txns.filter((t) => t.amount > 0).reduce((a, t) => a + t.amount, 0), [txns]);
+
+  const autoSaveEstimate = useMemo(() => Math.round(inflowsLast30 * autopilotPct), [inflowsLast30, autopilotPct]);
 
   const kpiTrend = useMemo(() => {
     const base = cashBalance / 1000;
@@ -295,15 +299,16 @@ export default function DashboardPage() {
     {
       id: "m1",
       who: "bot",
-      text: `Your money lasts about ${
-        Number.isFinite(runwayMonths) ? `${runwayMonths.toFixed(1)} months` : "∞"
-      }. Want a simple plan for what to do next?`,
+      text: `At your current burn rate, you have about ${
+        Number.isFinite(runwayMonths) ? `${runwayDays} days` : "∞"
+      } of runway. Want a simple plan for what to do next?`,
     },
     { id: "m2", who: "user", text: "Yes — what should I do this week?" },
     {
       id: "m3",
       who: "bot",
-      text: "1) Keep spending steady, 2) make sure invoices get paid, 3) keep a safety fund, 4) set auto-save to 8–10% if you can.",
+      text:
+        "1) Pause optional spending, 2) follow up on invoices daily, 3) keep an emergency buffer, 4) turn on autopilot to save 8–10% if you can.",
     },
   ]);
   const [chatInput, setChatInput] = useState("");
@@ -316,42 +321,45 @@ export default function DashboardPage() {
   function botReply(userText: string) {
     const t = userText.toLowerCase();
 
-    if (t.includes("runway") || t.includes("last") || t.includes("how long")) {
-      return `Your money lasts about ${
-        Number.isFinite(runwayMonths) ? `${runwayMonths.toFixed(1)} months` : "∞"
-      }, based on money in bank ${formatMoney(cashBalance)} and monthly spending ${formatMoney(
-        monthlyBurn
-      )}.`;
+    if (t.includes("runway") || t.includes("last") || t.includes("how long") || t.includes("depletion") || t.includes("bankrupt")) {
+      const dd = depletionDate ? formatShortDate(depletionDate) : null;
+      if (!Number.isFinite(runwayMonths)) {
+        return `You’re not burning cash right now. Cash inflow covers spending, so runway is effectively unlimited at the moment.`;
+      }
+      return `Runway is about ${runwayDays} days (≈${runwayMonths.toFixed(
+        1
+      )} months). With bank balance ${formatMoney(cashBalance)} and monthly burn ${formatMoney(monthlyBurn)}, projected depletion is ${dd ?? "N/A"}.`;
     }
-    if (
-      t.includes("autosave") ||
-      t.includes("auto-save") ||
-      t.includes("autopilot") ||
-      t.includes("move") ||
-      t.includes("%")
-    ) {
-      return `Auto-save is set to ${formatPct(autopilotPct)} of income. With income ${formatMoney(
+
+    if (t.includes("autosave") || t.includes("auto-save") || t.includes("autopilot") || t.includes("move") || t.includes("%")) {
+      return `Emergency Fund Autopilot is set to ${formatPct(autopilotPct)} of income. With income ${formatMoney(
         inflowsLast30
-      )} this month, it would set aside about ${formatMoney(autoSaveEstimate)}.`;
+      )} this month, it would reserve about ${formatMoney(autoSaveEstimate)}.`;
     }
-    if (t.includes("safety") || t.includes("emergency") || t.includes("goal") || t.includes("gap")) {
-      return `Safety fund goal (3 months of spending) is ${formatMoney(
-        safetyFundGoal
-      )}. You’re short by ${formatMoney(safetyFundGap)}. Progress is ${formatPct(
-        clamp(safetyFundProgress, 0, 1)
-      )}.`;
+
+    if (t.includes("safety") || t.includes("emergency") || t.includes("goal") || t.includes("gap") || t.includes("buffer")) {
+      return `Your emergency buffer target (3 months of spend) is ${formatMoney(safetyFundGoal)}. You’re short by ${formatMoney(
+        safetyFundGap
+      )}. Progress is ${formatPct(clamp(safetyFundProgress, 0, 1))}.`;
     }
-    if (t.includes("plan") || t.includes("week") || t.includes("do") || t.includes("next")) {
+
+    if (t.includes("plan") || t.includes("week") || t.includes("do") || t.includes("next") || t.includes("cut")) {
       const r = runwayMonths;
       if (!Number.isFinite(r))
-        return "You’re not burning cash. Next steps: keep spending steady, keep invoices moving, and build your safety fund.";
+        return "You’re not burning cash. Next steps: keep spend disciplined, keep invoices moving, and keep autopilot on to build an emergency buffer.";
       if (r < 3)
-        return "This week: (1) pause optional spending, (2) follow up on invoices daily, (3) renegotiate your biggest bill, (4) review payroll/contractors.";
+        return "This week: (1) pause optional spend, (2) follow up on invoices daily, (3) renegotiate your biggest bill, (4) review payroll/contractors, (5) build buffer with autopilot.";
       if (r < 6)
-        return "This week: (1) cut non-essential tools/marketing, (2) tighten approvals, (3) speed up collections, (4) set auto-save to 8–12% until you hit your safety goal.";
-      return "This week: (1) keep spending disciplined, (2) keep invoicing consistent, (3) build the safety fund, (4) keep auto-save on.";
+        return "This week: (1) cut non-essential tools/ads, (2) tighten approvals, (3) speed up collections, (4) set autopilot to 8–12% until you hit your buffer target.";
+      return "This week: (1) keep spending disciplined, (2) keep invoicing consistent, (3) grow the emergency buffer, (4) keep autopilot on.";
     }
-    return 'Ask me: “How long will my money last?”, “How does auto-save work?”, or “What should I do next?”';
+
+    if (t.includes("hire") || t.includes("employee") || t.includes("contractor")) {
+      if (!Number.isFinite(runwayMonths)) return "Cash flow is healthy. Hiring could be feasible — model the new monthly cost and re-check runway.";
+      return `Before hiring, simulate the added monthly cost. Right now runway is ${runwayDays} days. If the added cost reduces runway below 90 days, delay or hire part-time.`;
+    }
+
+    return 'Ask me: “How long is my runway?”, “What’s my depletion date?”, “How does autopilot work?”, or “What should I do next?”';
   }
 
   function sendChat() {
@@ -364,6 +372,8 @@ export default function DashboardPage() {
     setChat((prev) => [...prev, userMsg, reply]);
     setChatInput("");
   }
+
+  const showAlertBanner = risk.tone === "warn" || risk.tone === "danger";
 
   return (
     <main className="min-h-screen bg-black text-white print:bg-white print:text-black">
@@ -382,11 +392,7 @@ export default function DashboardPage() {
             <div className="flex flex-wrap items-center gap-2">
               <TabBox active={activeTab === "Dashboard"} label="Dashboard" onClick={() => setActiveTab("Dashboard")} />
               <TabBox active={activeTab === "Autopilot"} label="Auto-Save" onClick={() => setActiveTab("Autopilot")} />
-              <TabBox
-                active={activeTab === "Transactions"}
-                label="Transactions"
-                onClick={() => setActiveTab("Transactions")}
-              />
+              <TabBox active={activeTab === "Transactions"} label="Transactions" onClick={() => setActiveTab("Transactions")} />
             </div>
 
             <div className="flex items-center gap-2 md:justify-end">
@@ -415,38 +421,67 @@ export default function DashboardPage() {
                 <div>
                   <div className="text-sm text-white/60 print:text-black/60">{activeTab}</div>
                   <div className="mt-1 text-2xl font-semibold text-white tracking-tight print:text-black">
-                    Simple Money Overview + Safety Fund Auto-Save
+                    Cash Survival Dashboard + Emergency Fund Autopilot
                   </div>
                 </div>
                 <Pill tone={risk.tone}>{risk.label}</Pill>
               </div>
-              <div className="mt-2 text-xs text-white/60 print:text-black/60">
-                If you’re new to finance: focus on 3 things —{" "}
-                <span className="text-white/85">money in the bank</span>, <span className="text-white/85">monthly spending</span>, and{" "}
-                <span className="text-white/85">a safety fund</span>.
+
+              <div className="mt-3 space-y-2">
+                <div className="text-xs text-white/60 print:text-black/60">
+                  Epsilon makes small-business finance more accessible by giving you CFO-level clarity: runway, risk, and an automated emergency buffer.
+                </div>
+
+                {showAlertBanner && (
+                  <div
+                    className={cn(
+                      "rounded-2xl px-4 py-3 ring-1",
+                      risk.tone === "danger" ? "bg-white/[0.06] ring-white/15" : "bg-white/[0.05] ring-white/12"
+                    )}
+                  >
+                    <div className="text-xs text-white/60">Runway Alert</div>
+
+                    <div className="mt-1 text-sm text-white/90">
+                      {Number.isFinite(runwayMonths) ? (
+                        <>
+                          At your current burn, you have about <span className="font-semibold">{runwayDays} days</span> left
+                          {depletionDate ? (
+                            <>
+                              {" "}
+                              (projected depletion: <span className="font-semibold">{formatShortDate(depletionDate)}</span>)
+                            </>
+                          ) : null}
+                          .
+                        </>
+                      ) : (
+                        <>You’re not burning cash right now.</>
+                      )}
+                    </div>
+
+                    <div className="mt-1 text-xs text-white/60">
+                      Autopilot helps build your emergency buffer automatically so you’re protected before problems hit.
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
             {/* KPI row */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <Card title="Money in your bank" right={<Pill tone={risk.tone}>{risk.label}</Pill>}>
-                <div className="text-xs text-white/60 print:text-black/60">
-                  This is the cash you can use right now. (Demo numbers)
-                </div>
+              <Card title="Cash available (bank balance)" right={<Pill tone={risk.tone}>{risk.label}</Pill>}>
+                <div className="text-xs text-white/60 print:text-black/60">Cash you can use right now. (Demo numbers)</div>
 
                 <div className="mt-3 flex items-end justify-between gap-4">
                   <div>
-                    <div className="text-3xl font-semibold tracking-tight text-white print:text-black">
-                      {formatMoney(cashBalance)}
-                    </div>
-                    <div className="mt-1 text-xs text-white/60 print:text-black/60">Available money (bank balance)</div>
+                    <div className="text-3xl font-semibold tracking-tight text-white print:text-black">{formatMoney(cashBalance)}</div>
+                    <div className="mt-1 text-xs text-white/60 print:text-black/60">Available cash today</div>
                   </div>
                   <Sparkline values={kpiTrend} />
                 </div>
 
                 <div className="mt-4">
                   <div className="flex items-center justify-between text-xs text-white/60 print:text-black/60">
-                    <span>Safety fund goal</span>
+                    <span>Emergency buffer target (3 months)</span>
                     <span className="text-white font-medium print:text-black">{formatMoney(safetyFundGoal)}</span>
                   </div>
                   <div className="mt-2">
@@ -455,22 +490,23 @@ export default function DashboardPage() {
                 </div>
               </Card>
 
-              <Card title="Monthly spending">
-                <div className="text-xs text-white/60 print:text-black/60">
-                  Roughly what it costs each month to keep your business running.
-                </div>
+              <Card title="Burn rate & runway">
+                <div className="text-xs text-white/60 print:text-black/60">What it costs each month to keep your business running.</div>
 
                 <div className="mt-3 grid grid-cols-2 gap-3">
-                  <Stat label="Spending" value={formatMoney(monthlyBurn)} sub="Last 30 days (demo)" />
+                  <Stat label="Monthly burn" value={formatMoney(monthlyBurn)} sub="Last 30 days (demo)" />
                   <Stat
-                    label="How long your money lasts"
-                    value={Number.isFinite(runwayMonths) ? `${runwayMonths.toFixed(1)} mo` : "∞"}
-                    sub={risk.msg}
+                    label="Runway remaining"
+                    value={Number.isFinite(runwayMonths) ? `${runwayDays} days` : "∞"}
+                    sub={
+                      Number.isFinite(runwayMonths)
+                        ? `Projected depletion: ${depletionDate ? formatShortDate(depletionDate) : "N/A"}`
+                        : risk.msg
+                    }
                   />
                 </div>
 
                 <div className="mt-4 space-y-3">
-                  {/* ✅ CHANGED LABELS HERE */}
                   <ControlRow label="Bank amount">
                     <input
                       type="range"
@@ -497,26 +533,27 @@ export default function DashboardPage() {
                     <div className="hidden print:block text-sm text-black/70">{formatMoney(monthlyBurn)}</div>
                   </ControlRow>
                 </div>
+
+                <div className="mt-4 rounded-2xl bg-white/[0.03] ring-1 ring-white/10 p-4 print:bg-white print:ring-black/15">
+                  <div className="text-xs text-white/60 print:text-black/60">CFO note</div>
+                  <div className="mt-1 text-sm text-white/85 print:text-black/80">{risk.msg}</div>
+                </div>
               </Card>
 
-              <Card title="Auto-Save to Safety Fund">
-                <div className="text-xs text-white/60 print:text-black/60">
-                  Set aside a small % of income so you’re protected later.
-                </div>
+              <Card title="Emergency Fund Autopilot">
+                <div className="text-xs text-white/60 print:text-black/60">Automatically set aside a small % of income to build a buffer.</div>
 
                 <div className="mt-3 space-y-3">
                   <div className="rounded-2xl bg-white/[0.03] ring-1 ring-white/10 p-4 print:bg-white print:ring-black/15">
-                    <div className="text-xs text-white/60 print:text-black/60">Rule</div>
-                    <div className="mt-1 text-lg font-semibold text-white print:text-black">
-                      Save {formatPct(autopilotPct)} of income
-                    </div>
+                    <div className="text-xs text-white/60 print:text-black/60">Autopilot rule</div>
+                    <div className="mt-1 text-lg font-semibold text-white print:text-black">Reserve {formatPct(autopilotPct)} of income</div>
                     <div className="mt-1 text-xs text-white/60 print:text-black/60">
-                      Estimated this month:{" "}
+                      Estimated reserve this month:{" "}
                       <span className="font-medium text-white print:text-black">{formatMoney(autoSaveEstimate)}</span>
                     </div>
                   </div>
 
-                  <ControlRow label="Save %">
+                  <ControlRow label="Reserve %">
                     <input
                       type="range"
                       min={0}
@@ -530,9 +567,9 @@ export default function DashboardPage() {
                   </ControlRow>
 
                   <div className="rounded-2xl bg-white/[0.03] ring-1 ring-white/10 p-4 print:bg-white print:ring-black/15">
-                    <div className="text-xs text-white/60 print:text-black/60">How much you’re short</div>
+                    <div className="text-xs text-white/60 print:text-black/60">Buffer gap</div>
                     <div className="mt-1 text-2xl font-semibold text-white print:text-black">{formatMoney(safetyFundGap)}</div>
-                    <div className="mt-1 text-xs text-white/60 print:text-black/60">To reach a 3-month safety fund.</div>
+                    <div className="mt-1 text-xs text-white/60 print:text-black/60">To reach a 3-month emergency buffer.</div>
                   </div>
                 </div>
               </Card>
@@ -562,9 +599,7 @@ export default function DashboardPage() {
                             {t.category}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-right font-semibold text-white print:text-black">
-                          {formatMoney(t.amount)}
-                        </td>
+                        <td className="px-4 py-3 text-right font-semibold text-white print:text-black">{formatMoney(t.amount)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -573,8 +608,8 @@ export default function DashboardPage() {
 
               <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
                 <Stat label="Income (30d)" value={formatMoney(inflowsLast30)} />
-                <Stat label="Auto-save estimate" value={formatMoney(autoSaveEstimate)} />
-                <Stat label="Status" value={risk.label} sub={risk.msg} />
+                <Stat label="Autopilot reserve (est.)" value={formatMoney(autoSaveEstimate)} />
+                <Stat label="Cash risk" value={risk.label} sub={risk.msg} />
               </div>
             </Card>
           </div>
@@ -583,8 +618,8 @@ export default function DashboardPage() {
           <aside className="lg:sticky lg:top-6 h-fit print:hidden">
             <section className="rounded-3xl bg-white/[0.04] backdrop-blur-xl ring-1 ring-white/10 shadow-[0_30px_80px_-55px_rgba(0,0,0,0.75)] overflow-hidden">
               <div className="flex items-center justify-between px-5 pt-5">
-                <h3 className="text-sm font-semibold text-white/90">Ask Epsilon</h3>
-                <span className="text-xs text-white/55">Beginner help</span>
+                <h3 className="text-sm font-semibold text-white/90">Ask Epsilon (AI CFO)</h3>
+                <span className="text-xs text-white/55">Beginner-friendly</span>
               </div>
 
               <div className="px-5 pb-5 pt-4 space-y-3">
@@ -595,6 +630,18 @@ export default function DashboardPage() {
                   </div>
                   <div className="mt-2 text-sm text-white/85">{risk.headline}</div>
                   <div className="mt-1 text-xs text-white/60">{risk.msg}</div>
+
+                  {Number.isFinite(runwayMonths) && (
+                    <div className="mt-2 text-xs text-white/60">
+                      Runway: <span className="text-white/85 font-medium">{runwayDays} days</span>
+                      {depletionDate ? (
+                        <>
+                          {" "}
+                          • Depletion: <span className="text-white/85 font-medium">{formatShortDate(depletionDate)}</span>
+                        </>
+                      ) : null}
+                    </div>
+                  )}
                 </div>
 
                 <div className="rounded-2xl bg-white/[0.03] ring-1 ring-white/10 p-3">
@@ -611,7 +658,7 @@ export default function DashboardPage() {
 
                 <div className="flex gap-2">
                   <input
-                    placeholder='Try: "How long will my money last?"'
+                    placeholder='Try: "What’s my depletion date?"'
                     value={chatInput}
                     onChange={(e) => setChatInput(e.target.value)}
                     onKeyDown={(e) => {
@@ -627,7 +674,9 @@ export default function DashboardPage() {
                   </button>
                 </div>
 
-                <div className="text-[11px] text-white/45">Demo chat (no API yet). Later you can connect this to your AI route.</div>
+                <div className="text-[11px] text-white/45">
+                  Demo chat (no API yet). Later you can connect this to your AI route.
+                </div>
               </div>
             </section>
           </aside>
