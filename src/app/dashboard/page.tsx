@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useRef, useState, useEffect } from "react";
+import RiskCard from "@/Components/RiskCard";
 
 type Txn = {
   id: string;
@@ -38,6 +39,134 @@ function addDays(date: Date, days: number) {
 
 function formatShortDate(d: Date) {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+/** ======= Runway-based AutoSave (IF/THEN) ======= */
+function autosavePctFromRunway(runwayMonths: number) {
+  // long runway -> save less; short runway -> save more
+  if (!Number.isFinite(runwayMonths)) return 0.04;
+  if (runwayMonths >= 9) return 0.04;
+  if (runwayMonths >= 6) return 0.06;
+  if (runwayMonths >= 3) return 0.09;
+  if (runwayMonths >= 2) return 0.12;
+  if (runwayMonths >= 1) return 0.16;
+  return 0.2;
+}
+
+function autosaveRuleLabel(runwayMonths: number) {
+  if (!Number.isFinite(runwayMonths)) return "Stable cashflow → save lightly";
+  if (runwayMonths >= 9) return "9+ months runway → save lightly";
+  if (runwayMonths >= 6) return "6–9 months runway → save a bit more";
+  if (runwayMonths >= 3) return "3–6 months runway → save more";
+  if (runwayMonths >= 2) return "2–3 months runway → save aggressively";
+  if (runwayMonths >= 1) return "1–2 months runway → save very aggressively";
+  return "< 1 month runway → maximum saving";
+}
+
+/** ======= Money Input (no arrow stepping, strips leading zeros) ======= */
+function MoneyInput({
+  value,
+  onValueChange,
+  min = 0,
+  max,
+}: {
+  value: number;
+  onValueChange: (v: number) => void;
+  min?: number;
+  max?: number;
+}) {
+  const [text, setText] = useState<string>(String(Math.max(0, Math.trunc(value || 0))));
+
+  useEffect(() => {
+    const next = String(Math.max(0, Math.trunc(value || 0)));
+    if (next !== text) setText(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
+  function sanitize(raw: string) {
+    let s = raw.replace(/[^\d]/g, "");
+    s = s.replace(/^0+(?=\d)/, ""); // 01000 -> 1000
+    if (s === "") s = "0";
+    return s;
+  }
+
+  function commit(nextText: string) {
+    const n = Number(nextText);
+    if (Number.isNaN(n)) return;
+
+    let v = Math.max(min, n);
+    if (max != null) v = Math.min(max, v);
+    onValueChange(v);
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        value={text}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowUp" || e.key === "ArrowDown") e.preventDefault();
+        }}
+        onChange={(e) => {
+          const cleaned = sanitize(e.target.value);
+          setText(cleaned);
+          commit(cleaned);
+        }}
+        onBlur={() => {
+          const cleaned = sanitize(text);
+          setText(cleaned);
+          commit(cleaned);
+        }}
+        className="w-full rounded-2xl bg-white/[0.03] px-3 py-2 text-sm text-white/90 ring-1 ring-white/10 focus:outline-none focus:ring-white/20"
+      />
+
+      <div className="hidden md:block text-sm text-white/70 tabular-nums">{formatMoney(value)}</div>
+    </div>
+  );
+}
+
+/** ======= Txn Amount Input (allows +/-; strips leading zeros) ======= */
+function AmountInput({
+  value,
+  onValueChange,
+  placeholder,
+}: {
+  value: string;
+  onValueChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  function sanitize(raw: string) {
+    let s = raw.replace(/[^\d-]/g, "");
+    s = s.replace(/(?!^)-/g, ""); // keep only ONE '-' at the start
+    const neg = s.startsWith("-");
+    const digits = s.replace(/-/g, "").replace(/^0+(?=\d)/, "");
+    const out = (neg ? "-" : "") + (digits === "" ? "" : digits);
+    return out;
+  }
+
+  function normalizeOnBlur() {
+    let s = sanitize(value);
+    if (s === "" || s === "-") s = "0";
+    if (s === "-0") s = "0";
+    onValueChange(s);
+  }
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      value={value}
+      placeholder={placeholder}
+      onKeyDown={(e) => {
+        if (e.key === "ArrowUp" || e.key === "ArrowDown") e.preventDefault();
+      }}
+      onChange={(e) => onValueChange(sanitize(e.target.value))}
+      onBlur={normalizeOnBlur}
+      className="w-full rounded-2xl bg-white/[0.03] px-3 py-2 text-sm text-white/90 placeholder:text-white/35 ring-1 ring-white/10 focus:outline-none focus:ring-white/20"
+    />
+  );
 }
 
 /** ======= Brand Mark (Simpler Epsilon) ======= */
@@ -210,153 +339,20 @@ function GearIcon() {
   );
 }
 
-/** ======= Runway-based AutoSave (IF/THEN) ======= */
-function autosavePctFromRunway(runwayMonths: number) {
-  if (!Number.isFinite(runwayMonths)) return 0.04;
-  if (runwayMonths >= 9) return 0.04;
-  if (runwayMonths >= 6) return 0.06;
-  if (runwayMonths >= 3) return 0.09;
-  if (runwayMonths >= 2) return 0.12;
-  if (runwayMonths >= 1) return 0.16;
-  return 0.2;
-}
-
-function autosaveRuleLabel(runwayMonths: number) {
-  if (!Number.isFinite(runwayMonths)) return "Stable cashflow → save lightly";
-  if (runwayMonths >= 9) return "9+ months runway → save lightly";
-  if (runwayMonths >= 6) return "6–9 months runway → save a bit more";
-  if (runwayMonths >= 3) return "3–6 months runway → save more";
-  if (runwayMonths >= 2) return "2–3 months runway → save aggressively";
-  if (runwayMonths >= 1) return "1–2 months runway → save very aggressively";
-  return "< 1 month runway → maximum saving";
-}
-
-/** ======= Money Input (no arrow stepping, strips leading zeros) ======= */
-function MoneyInput({
-  value,
-  onValueChange,
-  min = 0,
-  max,
-}: {
-  value: number;
-  onValueChange: (v: number) => void;
-  min?: number;
-  max?: number;
-}) {
-  const [text, setText] = useState<string>(String(Math.max(0, Math.trunc(value || 0))));
-
-  useEffect(() => {
-    const next = String(Math.max(0, Math.trunc(value || 0)));
-    if (next !== text) setText(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
-
-  function sanitize(raw: string) {
-    let s = raw.replace(/[^\d]/g, "");
-    s = s.replace(/^0+(?=\d)/, "");
-    if (s === "") s = "0";
-    return s;
-  }
-
-  function commit(nextText: string) {
-    const n = Number(nextText);
-    if (Number.isNaN(n)) return;
-
-    let v = Math.max(min, n);
-    if (max != null) v = Math.min(max, v);
-    onValueChange(v);
-  }
-
-  return (
-    <div className="flex items-center gap-2">
-      <div className="flex-1">
-        <input
-          type="text"
-          inputMode="numeric"
-          pattern="[0-9]*"
-          value={text}
-          onKeyDown={(e) => {
-            if (e.key === "ArrowUp" || e.key === "ArrowDown") e.preventDefault();
-          }}
-          onChange={(e) => {
-            const cleaned = sanitize(e.target.value);
-            setText(cleaned);
-            commit(cleaned);
-          }}
-          onBlur={() => {
-            const cleaned = sanitize(text);
-            setText(cleaned);
-            commit(cleaned);
-          }}
-          className="w-full rounded-2xl bg-white/[0.03] px-3 py-2 text-sm text-white/90 ring-1 ring-white/10 focus:outline-none focus:ring-white/20"
-        />
-      </div>
-
-      <div className="hidden md:block text-sm text-white/70 tabular-nums">{formatMoney(value)}</div>
-    </div>
-  );
-}
-
-/** ======= Txn Amount Input (allows +/-; strips leading zeros) ======= */
-function AmountInput({
-  value,
-  onValueChange,
-  placeholder,
-}: {
-  value: string;
-  onValueChange: (v: string) => void;
-  placeholder?: string;
-}) {
-  function sanitize(raw: string) {
-    // allow optional leading '-' only
-    let s = raw.replace(/[^\d-]/g, "");
-    // keep only ONE minus and only at start
-    s = s.replace(/(?!^)-/g, "");
-    // split sign + digits
-    const neg = s.startsWith("-");
-    const digits = s.replace(/-/g, "").replace(/^0+(?=\d)/, "");
-    const out = (neg ? "-" : "") + (digits === "" ? "" : digits);
-    return out;
-  }
-
-  function onBlurNormalize() {
-    let s = sanitize(value);
-    if (s === "-" || s === "") s = "0";
-    // normalize "-0" to "0"
-    if (s === "-0") s = "0";
-    onValueChange(s);
-  }
-
-  return (
-    <input
-      type="text"
-      inputMode="numeric"
-      value={value}
-      placeholder={placeholder}
-      onKeyDown={(e) => {
-        if (e.key === "ArrowUp" || e.key === "ArrowDown") e.preventDefault();
-      }}
-      onChange={(e) => onValueChange(sanitize(e.target.value))}
-      onBlur={onBlurNormalize}
-      className="w-full rounded-2xl bg-white/[0.03] px-3 py-2 text-sm text-white/90 placeholder:text-white/35 ring-1 ring-white/10 focus:outline-none focus:ring-white/20"
-    />
-  );
-}
-
 export default function DashboardPage() {
   const [cashBalance, setCashBalance] = useState<number>(48250);
   const [monthlyBurn, setMonthlyBurn] = useState<number>(32000);
 
   const [activeTab, setActiveTab] = useState<"Dashboard" | "Autopilot" | "Transactions">("Dashboard");
 
-  // ===== NEW: transactions start empty =====
+  // ✅ transactions start EMPTY now
   const [txns, setTxns] = useState<Txn[]>([]);
 
-  // ===== NEW: "Add transaction" form =====
+  // ✅ add-transaction form state
   const [txnName, setTxnName] = useState("");
   const [txnCategory, setTxnCategory] = useState("");
-  const [txnAmountText, setTxnAmountText] = useState(""); // user can type 1000 or -1000
-  const [txnDateText, setTxnDateText] = useState(""); // optional, e.g. "Feb 21"
+  const [txnAmountText, setTxnAmountText] = useState(""); // can be 1000 or -1000
+  const [txnDateText, setTxnDateText] = useState(""); // optional
 
   const runwayMonths = useMemo(() => (monthlyBurn <= 0 ? Infinity : cashBalance / monthlyBurn), [cashBalance, monthlyBurn]);
 
@@ -405,15 +401,18 @@ export default function DashboardPage() {
     };
   }, [runwayMonths]);
 
+  // Beginner-friendly: emergency fund goal = 3 months of spending
   const safetyFundGoal = useMemo(() => Math.max(0, monthlyBurn * 3), [monthlyBurn]);
   const safetyFundProgress = useMemo(() => (safetyFundGoal <= 0 ? 1 : cashBalance / safetyFundGoal), [cashBalance, safetyFundGoal]);
   const safetyFundGap = useMemo(() => Math.max(0, safetyFundGoal - cashBalance), [safetyFundGoal, cashBalance]);
 
-  // inflows derived from user-entered transactions
+  // derived from your entered txns
   const inflowsLast30 = useMemo(() => txns.filter((t) => t.amount > 0).reduce((a, t) => a + t.amount, 0), [txns]);
 
+  // ✅ autopilot percent is runway-based (no slider)
   const autopilotPct = useMemo(() => autosavePctFromRunway(runwayMonths), [runwayMonths]);
   const autopilotRuleText = useMemo(() => autosaveRuleLabel(runwayMonths), [runwayMonths]);
+
   const autoSaveEstimate = useMemo(() => Math.round(inflowsLast30 * autopilotPct), [inflowsLast30, autopilotPct]);
 
   const kpiTrend = useMemo(() => {
@@ -454,14 +453,14 @@ export default function DashboardPage() {
     if (t.includes("autosave") || t.includes("auto-save") || t.includes("autopilot") || t.includes("move") || t.includes("%")) {
       return `Autopilot is automatic now: it saves more when runway is shorter. Current rule: ${autopilotRuleText}. That means reserving about ${formatPct(
         autopilotPct
-      )} of income. With income ${formatMoney(inflowsLast30)} this month, it would reserve about ${formatMoney(autoSaveEstimate)}.`;
+      )} of income. With income ${formatMoney(inflowsLast30)} from your entered transactions, it would reserve about ${formatMoney(autoSaveEstimate)}.`;
     }
 
     if (t.includes("transaction") || t.includes("income") || t.includes("expense") || t.includes("spent")) {
-      return `You currently have ${txns.length} saved transaction(s). Add income as positive (e.g. 1200) and expenses as negative (e.g. -450).`;
+      return `You currently have ${txns.length} transaction(s). Add income as positive (e.g. 1200) and expenses as negative (e.g. -450).`;
     }
 
-    return 'Ask me: “How long is my runway?”, “What’s my depletion date?”, or “How does autopilot work?”';
+    return 'Ask me: “How long is my runway?”, “What’s my depletion date?”, “How does autopilot work?”, or “How do I add transactions?”';
   }
 
   function sendChat() {
@@ -591,12 +590,15 @@ export default function DashboardPage() {
                     </div>
 
                     <div className="mt-1 text-xs text-white/60">
-                      Autopilot automatically increases saving as runway gets shorter, so you’re protected before problems hit.
+                      Autopilot automatically increases saving as runway gets shorter.
                     </div>
                   </div>
                 )}
               </div>
             </div>
+
+            {/* ✅ RiskCard stays */}
+            <RiskCard cashBalance={cashBalance} monthlyBurn={monthlyBurn} emergencyFundTargetMonths={3} />
 
             {/* KPI row */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -638,6 +640,7 @@ export default function DashboardPage() {
                   />
                 </div>
 
+                {/* ✅ replaced sliders with inputs, fixed labels */}
                 <div className="mt-4 space-y-3">
                   <ControlRow label="Bank amount ($)">
                     <MoneyInput value={cashBalance} onValueChange={setCashBalance} min={0} />
@@ -662,9 +665,7 @@ export default function DashboardPage() {
                 <div className="mt-3 space-y-3">
                   <div className="rounded-2xl bg-white/[0.03] ring-1 ring-white/10 p-4 print:bg-white print:ring-black/15">
                     <div className="text-xs text-white/60 print:text-black/60">Autopilot rule (runway-based)</div>
-                    <div className="mt-1 text-lg font-semibold text-white print:text-black">
-                      Reserve {formatPct(autopilotPct)} of income
-                    </div>
+                    <div className="mt-1 text-lg font-semibold text-white print:text-black">Reserve {formatPct(autopilotPct)} of income</div>
                     <div className="mt-1 text-xs text-white/60 print:text-black/60">{autopilotRuleText}</div>
                     <div className="mt-2 text-xs text-white/60 print:text-black/60">
                       Estimated reserve this month:{" "}
@@ -681,7 +682,7 @@ export default function DashboardPage() {
               </Card>
             </div>
 
-            {/* ===== NEW: Recent transactions (empty + user add/subtract) ===== */}
+            {/* ✅ Transactions: starts empty, user adds + / - */}
             <Card title="Recent transactions (add income / subtract expenses)">
               <div className="text-xs text-white/60 print:text-black/60">
                 Start empty and add your own. Income is positive (e.g. 1200). Expenses are negative (e.g. -450).
@@ -711,6 +712,9 @@ export default function DashboardPage() {
                     onChange={(e) => setTxnDateText(e.target.value)}
                     placeholder="Date (optional)"
                     className="w-full rounded-2xl bg-white/[0.03] px-3 py-2 text-sm text-white/90 placeholder:text-white/35 ring-1 ring-white/10 focus:outline-none focus:ring-white/20"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") addTxn();
+                    }}
                   />
                   <button
                     onClick={addTxn}
@@ -832,7 +836,10 @@ export default function DashboardPage() {
                     }}
                     className="w-full rounded-2xl bg-white/[0.03] px-3 py-2 text-sm text-white/80 placeholder:text-white/40 ring-1 ring-white/10"
                   />
-                  <button onClick={sendChat} className="rounded-2xl bg-white text-black px-3 py-2 text-sm font-semibold hover:bg-white/90 transition">
+                  <button
+                    onClick={sendChat}
+                    className="rounded-2xl bg-white text-black px-3 py-2 text-sm font-semibold hover:bg-white/90 transition"
+                  >
                     Send
                   </button>
                 </div>
@@ -841,6 +848,20 @@ export default function DashboardPage() {
               </div>
             </section>
           </aside>
+        </div>
+
+        {/* PRINT-ONLY Ask Epsilon */}
+        <div className="hidden print:block mt-6">
+          <Card title="Ask Epsilon (Print)">
+            <div className="space-y-2 text-sm">
+              {chat.map((m) => (
+                <div key={m.id} className="flex gap-2">
+                  <div className="w-12 text-black/60 text-xs font-semibold">{m.who === "user" ? "You" : "Bot"}</div>
+                  <div className="text-black">{m.text}</div>
+                </div>
+              ))}
+            </div>
+          </Card>
         </div>
       </div>
     </main>
