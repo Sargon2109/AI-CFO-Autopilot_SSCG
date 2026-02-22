@@ -20,7 +20,13 @@ function getModeAndPct(args: {
   monthlyBurn: number;
   targetMonths: number;
   runwayDays: number | null;
-}): { mode: SaveMode; suggestedPct: number; minPct: number; maxPct: number; reserveMonths: number | null } {
+}): {
+  mode: SaveMode;
+  suggestedPct: number;
+  minPct: number;
+  maxPct: number;
+  reserveMonths: number | null;
+} {
   const { reserveBalance, monthlyBurn, targetMonths, runwayDays } = args;
 
   if (monthlyBurn <= 0) {
@@ -151,16 +157,10 @@ function computeRiskScore(args: {
 }): number {
   const { reserveMonths, runwayDays, targetMonths } = args;
 
-  // If unknown, pick a medium-default so UI still looks alive
   if (reserveMonths === null) return 55;
 
-  // Reserve component (dominant)
-  // reserve >= targetMonths => 0 risk from reserve
-  // reserve 0 => 100 risk
   const reserveRisk = clamp(((targetMonths - reserveMonths) / targetMonths) * 100, 0, 100);
 
-  // Runway component (secondary)
-  // <30 days = +35, 30-60 = +20, 60-120 = +10, else +0
   let runwayRisk = 0;
   if (runwayDays !== null && runwayDays > 0) {
     if (runwayDays < 30) runwayRisk = 35;
@@ -172,7 +172,6 @@ function computeRiskScore(args: {
 }
 
 function riskBarGradient(mode: SaveMode) {
-  // smooth transitions between color schemes
   switch (mode) {
     case "critical":
       return "from-red-500 to-red-300";
@@ -190,15 +189,17 @@ function riskBarGradient(mode: SaveMode) {
 }
 
 export default function EmergencyAutopilotCard() {
-  const {
-    cashBalance,
-    monthlyBurn,
-    autopilotPct,
-    setAutopilotPct,
-    reserveBalance,
-  } = useAppStore();
+  const { cashBalance, monthlyBurn, autopilotPct, setAutopilotPct, reserveBalance } = useAppStore();
 
   const targetMonths = 3;
+
+  // ✅ MINIMAL FIX:
+  // If you don't have a separate reserve input yet, treat bank cash as the reserve.
+  // Once reserveBalance is set (>0), it'll use that instead.
+  const reserveForCalc = useMemo(
+    () => (reserveBalance > 0 ? reserveBalance : cashBalance),
+    [reserveBalance, cashBalance]
+  );
 
   const runwayDays = useMemo(
     () => calcRunwayDays(cashBalance, monthlyBurn),
@@ -208,41 +209,30 @@ export default function EmergencyAutopilotCard() {
   const emergencyGoal = useMemo(() => monthlyBurn * targetMonths, [monthlyBurn]);
 
   const gap = useMemo(
-    () => Math.max(0, emergencyGoal - reserveBalance),
-    [emergencyGoal, reserveBalance]
+    () => Math.max(0, emergencyGoal - reserveForCalc),
+    [emergencyGoal, reserveForCalc]
   );
 
   const rules = useMemo(
     () =>
       getModeAndPct({
-        reserveBalance,
+        reserveBalance: reserveForCalc,
         monthlyBurn,
         targetMonths,
         runwayDays,
       }),
-    [reserveBalance, monthlyBurn, targetMonths, runwayDays]
+    [reserveForCalc, monthlyBurn, targetMonths, runwayDays]
   );
 
   // Override mode: default OFF
   const [overrideOn, setOverrideOn] = useState(false);
 
-  // When override OFF, auto-apply the mode's suggested pct
-  const desiredAutoPct = rules.suggestedPct;
-  const effectivePct = overrideOn ? autopilotPct : desiredAutoPct;
-
-  // keep store synced when override OFF
-  const [justSaved, setJustSaved] = useState(false);
-  const bumpSaved = () => {
-    setJustSaved(true);
-    window.setTimeout(() => setJustSaved(false), 900);
-  };
-
+  // When override OFF, auto-apply the mode's suggested % to the store
   useEffect(() => {
-    if (!overrideOn && autopilotPct !== desiredAutoPct) {
-      setAutopilotPct(desiredAutoPct);
-      bumpSaved();
-    }
-  }, [overrideOn, autopilotPct, desiredAutoPct, setAutopilotPct]);
+    if (!overrideOn) setAutopilotPct(rules.suggestedPct);
+  }, [overrideOn, rules.suggestedPct, setAutopilotPct]);
+
+  const effectivePct = overrideOn ? autopilotPct : rules.suggestedPct;
 
   const monthlyReserve = useMemo(() => {
     if (monthlyBurn <= 0) return 0;
@@ -255,16 +245,14 @@ export default function EmergencyAutopilotCard() {
     return Math.ceil(gap / monthlyReserve);
   }, [gap, monthlyReserve]);
 
-  const reserveMonthsDisplay = rules.reserveMonths;
-
   const riskScore = useMemo(
     () =>
       computeRiskScore({
-        reserveMonths: reserveMonthsDisplay,
+        reserveMonths: rules.reserveMonths,
         runwayDays,
         targetMonths,
       }),
-    [reserveMonthsDisplay, runwayDays, targetMonths]
+    [rules.reserveMonths, runwayDays, targetMonths]
   );
 
   const riskLabel = useMemo(() => {
@@ -274,190 +262,97 @@ export default function EmergencyAutopilotCard() {
     return "Low";
   }, [riskScore, rules.mode]);
 
-  const criticalGlow = rules.mode === "critical";
-
   return (
     <section className="rounded-3xl bg-white/[0.04] ring-1 ring-white/10 p-6">
-      {/* subtle pulsing glow only when critical */}
-      <style>{`
-        @keyframes criticalPulse {
-          0%, 100% { box-shadow: 0 0 0px rgba(239, 68, 68, 0.0), 0 0 0px rgba(239, 68, 68, 0.0); }
-          50% { box-shadow: 0 0 22px rgba(239, 68, 68, 0.22), 0 0 48px rgba(239, 68, 68, 0.10); }
-        }
-      `}</style>
-
       <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <div className="text-sm text-white/60">Emergency Fund Autopilot</div>
-            <span
-              className={[
-                "text-xs rounded-full px-2 py-0.5 ring-1 transition",
-                justSaved
-                  ? "bg-emerald-500/20 text-emerald-200 ring-emerald-500/30"
-                  : "bg-white/[0.03] text-white/60 ring-white/10",
-              ].join(" ")}
-            >
-              {justSaved ? "Saved ✓" : "Auto-saves"}
-            </span>
+        <div>
+          <div className="text-sm text-white/60">Emergency Fund Autopilot</div>
+          <div className="mt-2 text-3xl font-semibold text-white">
+            Build a 3-month safety buffer automatically
           </div>
 
-          <div className="mt-2 text-2xl font-semibold text-white">
-            Build a {targetMonths}-month safety buffer automatically
-          </div>
-
-          <div className="mt-2 text-sm text-white/60">
+          <div className="mt-3 text-sm text-white/70">
             Goal: <span className="text-white">{formatMoney(emergencyGoal)}</span> • Reserve:{" "}
-            <span className="text-white">{formatMoney(reserveBalance)}</span> • Gap:{" "}
+            <span className="text-white">{formatMoney(reserveForCalc)}</span> • Gap:{" "}
             <span className="text-white">{formatMoney(gap)}</span>
           </div>
 
           <div className="mt-2 text-xs text-white/60">
             Runway:{" "}
-            <span className="text-white">
-              {runwayDays === null ? "— (enter burn to compute)" : `${runwayDays} days`}
-            </span>
+            <span className="text-white">{runwayDays === null ? "—" : `${runwayDays} days`}</span>
+          </div>
+        </div>
+
+        <div className="min-w-[260px] rounded-3xl bg-black/30 ring-1 ring-white/10 p-4">
+          <div className="text-xs text-white/60">Autopilot</div>
+          <div className="mt-1 flex items-center justify-between">
+            <div className="text-3xl font-semibold text-white">{effectivePct}%</div>
+            <button
+              onClick={() => setOverrideOn((v) => !v)}
+              className="rounded-full bg-white/[0.06] px-3 py-1 text-xs text-white ring-1 ring-white/10 hover:bg-white/[0.10]"
+            >
+              {overrideOn ? "Auto" : "Override"}
+            </button>
           </div>
 
-          {/* Mode + risk meter */}
-          <div
-            className={[
-              "mt-4 rounded-2xl bg-black/25 ring-1 ring-white/10 p-4 transition-all duration-500",
-              criticalGlow ? "ring-red-500/30" : "",
-            ].join(" ")}
-            style={criticalGlow ? { animation: "criticalPulse 1.8s ease-in-out infinite" } : undefined}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-xs text-white/60">Mode</div>
-                <div className={modeBadgeClasses(rules.mode)}>
-                  <span className={modeDotClass(rules.mode)} />
-                  {modeLabel(rules.mode)}
-                </div>
-
-                <div className="mt-2 text-xs text-white/60">
-                  {monthlyBurn <= 0
-                    ? "Enter burn rate to unlock smart modes."
-                    : modeBlurb(rules.mode, targetMonths)}
-                </div>
-              </div>
-
-              <div className="text-right">
-                <div className="text-xs text-white/60">Reserve (months)</div>
-                <div className="text-sm font-semibold text-white">
-                  {reserveMonthsDisplay === null ? "—" : reserveMonthsDisplay.toFixed(1)}
-                </div>
-              </div>
+          <div className="mt-2 text-xs text-white/60">
+            Auto-adjusting by mode.
+            <div className="mt-1 text-white/70">
+              Current rule: {modeLabel(rules.mode)} → {rules.suggestedPct}%
             </div>
+          </div>
 
-            {/* Risk meter */}
-            <div className="mt-4">
-              <div className="flex items-center justify-between text-xs text-white/60">
-                <span>Risk meter</span>
-                <span className="text-white/80">
-                  {riskLabel} • {Math.round(riskScore)}%
-                </span>
-              </div>
+          <div className="mt-4 text-sm text-white/80">
+            Estimated reserve this month:{" "}
+            <span className="font-semibold text-white">{formatMoney(monthlyReserve)}</span>
+          </div>
 
-              <div className="mt-2 h-2.5 w-full rounded-full bg-white/10 ring-1 ring-white/10 overflow-hidden">
-                <div
-                  className={[
-                    "h-full rounded-full bg-gradient-to-r transition-all duration-700 ease-out",
-                    riskBarGradient(rules.mode),
-                  ].join(" ")}
-                  style={{ width: `${clamp(riskScore, 0, 100)}%` }}
-                />
-              </div>
+          <div className="mt-1 text-xs text-white/60">
+            Time to fully fund reserve:{" "}
+            <span className="text-white">{monthsToGoal === null ? "—" : `~${monthsToGoal} months`}</span>
+          </div>
 
-              <div className="mt-2 text-[11px] text-white/50">
-                Risk is based on reserve months (primary) + runway days (secondary).
-              </div>
+          <div className="mt-3 text-xs text-white/60">
+            Autopilot adjusts automatically unless Override is enabled.
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-5 rounded-3xl bg-black/30 ring-1 ring-white/10 p-5">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <div className={modeBadgeClasses(rules.mode)}>
+              <span className={modeDotClass(rules.mode)} />
+              {modeLabel(rules.mode)}
+            </div>
+            <div className="mt-2 text-sm text-white/70">{modeBlurb(rules.mode, targetMonths)}</div>
+          </div>
+
+          <div className="text-right">
+            <div className="text-xs text-white/60">Reserve (months)</div>
+            <div className="text-lg font-semibold text-white">
+              {rules.reserveMonths === null ? "—" : rules.reserveMonths.toFixed(1)}
             </div>
           </div>
         </div>
 
-        {/* Control panel */}
-        <div className="rounded-3xl bg-black/30 ring-1 ring-white/10 p-4 min-w-[340px]">
-          <div className="flex items-center justify-between">
-            <div className="text-xs text-white/60">Autopilot</div>
-
-            <button
-              onClick={() => {
-                setOverrideOn((v) => {
-                  const next = !v;
-                  // when turning override ON, seed slider with current auto pct
-                  if (!v) {
-                    setAutopilotPct(desiredAutoPct);
-                    bumpSaved();
-                  }
-                  return next;
-                });
-              }}
-              className={[
-                "rounded-2xl px-3 py-1 text-xs ring-1 transition-colors duration-300",
-                overrideOn
-                  ? "bg-white text-black ring-white/20 hover:bg-white/90"
-                  : "bg-white/[0.06] text-white ring-white/10 hover:bg-white/[0.10]",
-              ].join(" ")}
-            >
-              {overrideOn ? "Override: ON" : "Override"}
-            </button>
+        <div className="mt-4">
+          <div className="flex items-center justify-between text-xs text-white/60">
+            <span>Risk meter</span>
+            <span>
+              {riskLabel} • {Math.round(riskScore)}%
+            </span>
           </div>
 
-          <div className="mt-2 flex items-baseline justify-between">
-            <div className="text-2xl font-semibold text-white">{effectivePct}%</div>
-            <div className="text-xs text-white/60">
-              {monthlyBurn <= 0 ? "Set burn to estimate" : `≈ ${formatMoney(monthlyReserve)}/mo`}
-            </div>
+          <div className="mt-2 h-3 w-full rounded-full bg-white/10 overflow-hidden">
+            <div
+              className={`h-3 rounded-full bg-gradient-to-r ${riskBarGradient(rules.mode)} transition-all duration-300`}
+              style={{ width: `${riskScore}%` }}
+            />
           </div>
 
-          {!overrideOn ? (
-            <div className="mt-3 rounded-2xl bg-white/[0.05] ring-1 ring-white/10 p-3 transition-colors duration-500">
-              <div className="text-sm text-white/80">Auto-adjusting by mode.</div>
-              <div className="mt-1 text-xs text-white/60">
-                Current rule: {modeLabel(rules.mode)} → {rules.suggestedPct}%
-              </div>
-            </div>
-          ) : (
-            <div className="mt-3">
-              <div className="flex items-center justify-between text-xs text-white/60">
-                <span>Min {rules.minPct}%</span>
-                <span>Max {rules.maxPct}%</span>
-              </div>
-
-              <input
-                type="range"
-                min={rules.minPct}
-                max={rules.maxPct}
-                value={clamp(autopilotPct, rules.minPct, rules.maxPct)}
-                onChange={(e) => {
-                  setAutopilotPct(Number(e.target.value));
-                  bumpSaved();
-                }}
-                className="mt-2 w-full"
-              />
-
-              <div className="mt-2 text-xs text-white/60">
-                Override is on — you control the saving rate.
-              </div>
-            </div>
-          )}
-
-          <div className="mt-4 text-sm text-white/70">
-            Estimated reserve this month:{" "}
-            <span className="text-white">{formatMoney(monthlyReserve)}</span>
-          </div>
-
-          <div className="mt-1 text-xs text-white/60">
-            {monthsToGoal === null
-              ? "Enter a burn rate to estimate time-to-goal."
-              : monthsToGoal === 0
-              ? "Reserve goal already met ✅"
-              : `Time to fully fund reserve: ~${monthsToGoal} months`}
-          </div>
-
-          <div className="mt-3 text-xs text-white/50">
-            Autopilot adjusts automatically unless Override is enabled.
+          <div className="mt-2 text-xs text-white/50">
+            Risk is based on reserve months (primary) + runway days (secondary).
           </div>
         </div>
       </div>
