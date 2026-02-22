@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 
 function Tab({ href, label }: { href: string; label: string }) {
   const pathname = usePathname();
+
+  // Treat "/" as active only when you're exactly on the homepage
   const active = pathname === href;
 
   return (
@@ -32,11 +34,15 @@ export default function Navbar() {
           </div>
           <div>
             <div className="font-semibold leading-tight">Epsilon Finance</div>
-            <div className="text-xs text-white/60">Cash risk + emergency fund autopilot</div>
+            <div className="text-xs text-white/60">
+              Cash risk + emergency fund autopilot
+            </div>
           </div>
         </div>
 
+        {/* Desktop tabs */}
         <nav className="hidden md:flex items-center gap-2">
+          <Tab href="/" label="Home" />
           <Tab href="/dashboard" label="Dashboard" />
           <Tab href="/autosave" label="Auto-Save" />
           <Tab href="/transactions" label="Transactions" />
@@ -49,7 +55,9 @@ export default function Navbar() {
         </div>
       </div>
 
+      {/* Mobile tabs */}
       <nav className="mt-3 flex md:hidden items-center gap-2">
+        <Tab href="/" label="Home" />
         <Tab href="/dashboard" label="Dashboard" />
         <Tab href="/autosave" label="Auto-Save" />
         <Tab href="/transactions" label="Transactions" />
