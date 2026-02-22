@@ -1,7 +1,27 @@
+"use client";
+
 import Link from "next/link";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
+}
+
+/** Inline SVG noise (no external asset) */
+function noiseDataUrl() {
+  const svg = `
+  <svg xmlns="http://www.w3.org/2000/svg" width="180" height="180">
+    <filter id="n">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" stitchTiles="stitch"/>
+      <feColorMatrix type="matrix" values="
+        1 0 0 0 0
+        0 1 0 0 0
+        0 0 1 0 0
+        0 0 0 .55 0"/>
+    </filter>
+    <rect width="100%" height="100%" filter="url(#n)" opacity="0.55"/>
+  </svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
 function Coin({
@@ -13,15 +33,17 @@ function Coin({
   floatClass,
   delay,
   duration,
+  opacity = 1,
 }: {
   x: string;
   y: string;
   size: number;
   label: string;
-  glow: string; // tailwind shadow + ring
-  floatClass: string; // tailwind animation class
+  glow: string;
+  floatClass: string;
   delay: string;
   duration: string;
+  opacity?: number;
 }) {
   return (
     <div
@@ -37,6 +59,7 @@ function Coin({
         top: y,
         width: size,
         height: size,
+        opacity,
         animationDelay: delay,
         animationDuration: duration,
       }}
@@ -48,7 +71,14 @@ function Coin({
             "radial-gradient(circle at 30% 30%, rgba(255,255,255,0.22), transparent 55%), radial-gradient(circle at 60% 70%, rgba(255,255,255,0.08), transparent 60%)",
         }}
       />
-      <div className="relative z-10 text-white/90 font-semibold" style={{ fontSize: Math.max(18, Math.floor(size * 0.36)) }}>
+      <div
+        className="relative z-10 font-semibold"
+        style={{
+          fontSize: Math.max(18, Math.floor(size * 0.36)),
+          color: "rgba(255,255,255,0.72)",
+          textShadow: "0 0 10px rgba(0,0,0,0.55)",
+        }}
+      >
         {label}
       </div>
       <div className="absolute inset-0 rounded-full bg-gradient-to-b from-white/10 to-transparent" />
@@ -57,39 +87,78 @@ function Coin({
 }
 
 export default function Home() {
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const [hoverPos, setHoverPos] = useState({ x: 50, y: 50 });
+  const [isHovering, setIsHovering] = useState(false);
+
+  // Mouse color-shift effect on card (NO parallax / NO micro motion)
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+
+    const onMove = (e: PointerEvent) => {
+      const rect = el.getBoundingClientRect();
+      const x = ((e.clientX - rect.left) / rect.width) * 100;
+      const y = ((e.clientY - rect.top) / rect.height) * 100;
+      setHoverPos({ x, y });
+    };
+
+    const onEnter = () => setIsHovering(true);
+    const onLeave = () => setIsHovering(false);
+
+    el.addEventListener("pointermove", onMove);
+    el.addEventListener("pointerenter", onEnter);
+    el.addEventListener("pointerleave", onLeave);
+
+    return () => {
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerenter", onEnter);
+      el.removeEventListener("pointerleave", onLeave);
+    };
+  }, []);
+
+  const spotlightStyle = useMemo(
+    () => ({
+      background: `radial-gradient(600px circle at ${hoverPos.x}% ${hoverPos.y}%, rgba(34,211,238,0.10), transparent 60%)`,
+      opacity: isHovering ? 1 : 0,
+    }),
+    [hoverPos, isHovering]
+  );
+
   return (
     <div className="relative min-h-screen overflow-hidden bg-black font-sans text-white">
-      {/* BACKGROUND */}
+      {/* BACKGROUND (STATIC — no micro motion) */}
       <div className="pointer-events-none absolute inset-0">
         {/* Neon glow blobs */}
-        <div className="absolute -top-56 -left-56 h-[820px] w-[820px] rounded-full bg-emerald-500/25 blur-[150px] animate-pulse" />
-        <div className="absolute -bottom-64 -right-64 h-[920px] w-[920px] rounded-full bg-cyan-500/20 blur-[170px] animate-pulse" />
-        <div className="absolute top-1/3 -right-40 h-[700px] w-[700px] rounded-full bg-fuchsia-500/14 blur-[170px] animate-pulse" />
+        <div className="absolute -top-56 -left-56 h-[820px] w-[820px] rounded-full bg-emerald-500/25 blur-[150px]" />
+        <div className="absolute -bottom-64 -right-64 h-[920px] w-[920px] rounded-full bg-cyan-500/20 blur-[170px]" />
+        <div className="absolute top-1/3 -right-40 h-[700px] w-[700px] rounded-full bg-fuchsia-500/14 blur-[170px]" />
 
-        {/* Moving grid (CSS-free: use background-position animation via Tailwind arbitrary values) */}
+        {/* Static grid */}
         <div
           className={cn(
             "absolute inset-0 opacity-30",
             "bg-[linear-gradient(to_right,rgba(255,255,255,0.09)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.09)_1px,transparent_1px)]",
-            "bg-[size:64px_64px]",
-            "animate-[gridPan_18s_linear_infinite]"
+            "bg-[size:64px_64px]"
           )}
           style={{
-            // mask without styled-jsx
             WebkitMaskImage: "radial-gradient(circle at 50% 35%, black 0%, transparent 68%)",
             maskImage: "radial-gradient(circle at 50% 35%, black 0%, transparent 68%)",
           }}
         />
 
-        {/* Stock/crypto chart lines */}
+        {/* Chart (STATIC now) */}
         <svg className="absolute inset-0 h-full w-full opacity-60" viewBox="0 0 1200 700" fill="none">
-          {/* Candlestick-ish ticks */}
           {Array.from({ length: 34 }).map((_, i) => {
             const x = 30 + i * 34;
             const top = 140 + ((i * 19) % 160);
             const bot = top + 40 + ((i * 23) % 90);
             const color =
-              i % 3 === 0 ? "rgba(34,211,238,0.40)" : i % 3 === 1 ? "rgba(16,185,129,0.34)" : "rgba(217,70,239,0.22)";
+              i % 3 === 0
+                ? "rgba(34,211,238,0.40)"
+                : i % 3 === 1
+                ? "rgba(16,185,129,0.34)"
+                : "rgba(217,70,239,0.22)";
             return <line key={i} x1={x} y1={top} x2={x} y2={bot} stroke={color} strokeWidth="2" />;
           })}
 
@@ -108,18 +177,9 @@ export default function Home() {
             stroke="rgba(217,70,239,0.28)"
             strokeWidth="2.2"
           />
-
-          {/* dots */}
-          {Array.from({ length: 18 }).map((_, i) => {
-            const cx = 80 + i * 62;
-            const cy = 160 + ((i * 47) % 360);
-            const fill =
-              i % 3 === 0 ? "rgba(34,211,238,0.60)" : i % 3 === 1 ? "rgba(16,185,129,0.52)" : "rgba(217,70,239,0.36)";
-            return <circle key={i} cx={cx} cy={cy} r="3.2" fill={fill} />;
-          })}
         </svg>
 
-        {/* Floating coins */}
+        {/* Floating coins (still gently floating — not market motion) */}
         <Coin
           x="8%"
           y="18%"
@@ -135,10 +195,11 @@ export default function Home() {
           y="14%"
           size={72}
           label="Ξ"
-          glow="shadow-[0_0_40px_rgba(16,185,129,0.22)]"
+          glow="shadow-[0_0_40px_rgba(16,185,129,0.18)]"
           floatClass="animate-[floatY_16s_ease-in-out_infinite]"
           delay="1.2s"
           duration="16s"
+          opacity={0.22}
         />
         <Coin
           x="14%"
@@ -160,70 +221,83 @@ export default function Home() {
           delay="0.2s"
           duration="18s"
         />
-        <Coin
-          x="60%"
-          y="40%"
-          size={64}
-          label="Ξ"
-          glow="shadow-[0_0_38px_rgba(217,70,239,0.16)]"
-          floatClass="animate-[floatY_17s_ease-in-out_infinite]"
-          delay="1.6s"
-          duration="17s"
+
+        {/* Film grain */}
+        <div
+          className="absolute inset-0 opacity-[0.10] mix-blend-overlay"
+          style={{
+            backgroundImage: `url(${noiseDataUrl()})`,
+            backgroundRepeat: "repeat",
+          }}
         />
       </div>
 
       {/* FOREGROUND */}
       <div className="relative flex min-h-screen items-center justify-center px-6">
-        <main className="w-full max-w-3xl rounded-3xl border border-white/15 bg-black/55 p-10 text-center shadow-2xl backdrop-blur-xl sm:p-14">
-          <div className="mx-auto inline-flex items-center gap-3 select-none">
-            <div className="h-11 w-11 rounded-2xl bg-white/10 ring-1 ring-white/15 grid place-items-center">
-              <span className="text-3xl font-semibold leading-none text-white">ε</span>
+        <main
+          ref={cardRef}
+          className="relative w-full max-w-3xl rounded-3xl border border-white/15 bg-black/55 p-10 text-center shadow-2xl backdrop-blur-xl sm:p-14 overflow-hidden"
+        >
+          {/* Mouse spotlight color shift */}
+          <div
+            className="pointer-events-none absolute inset-0 transition-opacity duration-300"
+            style={spotlightStyle}
+          />
+
+          <div className="relative z-10">
+            <div className="mx-auto inline-flex items-center gap-3 select-none">
+              <div className="h-11 w-11 rounded-2xl bg-white/10 ring-1 ring-white/15 grid place-items-center">
+                <span className="text-3xl font-semibold leading-none text-white">ε</span>
+              </div>
+              <div className="text-left leading-tight">
+                <div className="text-lg font-semibold tracking-wide text-white sm:text-xl">
+                  Epsilon Finance
+                </div>
+                <div className="text-xs text-white/60">
+                  Cash risk + emergency fund autopilot
+                </div>
+              </div>
             </div>
-            <div className="text-left leading-tight">
-              <div className="text-sm font-semibold tracking-wide text-white">Epsilon Finance</div>
-              <div className="text-xs text-white/60">Cash risk + emergency fund autopilot</div>
+
+            <h1 className="mt-6 text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+              CFO-level clarity — without the finance degree.
+            </h1>
+
+            <p className="mx-auto mt-4 max-w-xl text-lg leading-8 text-white/70">
+              See how long your cash lasts, get risk alerts, and automatically build an emergency buffer.
+              Ask Epsilon gives you simple “what do I do next?” guidance.
+            </p>
+
+            <div className="mt-6 flex flex-wrap justify-center gap-2 text-xs">
+              <span className="rounded-full bg-white/10 px-3 py-1 ring-1 ring-white/15 text-white/90">
+                Runway
+              </span>
+              <span className="rounded-full bg-white/10 px-3 py-1 ring-1 ring-white/15 text-white/90">
+                Risk
+              </span>
+              <span className="rounded-full bg-white/10 px-3 py-1 ring-1 ring-white/15 text-white/90">
+                Auto-Save
+              </span>
+              <span className="rounded-full bg-white/10 px-3 py-1 ring-1 ring-white/15 text-white/90">
+                Ask Epsilon
+              </span>
             </div>
+
+            <div className="mt-8 flex justify-center">
+              <Link
+                href="/dashboard"
+                className="inline-flex h-12 items-center justify-center rounded-full bg-white px-6 text-sm font-semibold text-black transition hover:bg-white/90"
+              >
+                Open Dashboard
+              </Link>
+            </div>
+
+            <p className="mt-8 text-xs text-white/45">
+              Demo build — no bank connection yet.
+            </p>
           </div>
-
-          <h1 className="mt-6 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-            CFO-level clarity — without the finance degree.
-          </h1>
-
-          <p className="mx-auto mt-4 max-w-xl text-lg leading-8 text-white/70">
-            See how long your cash lasts, get risk alerts, and automatically build an emergency buffer.
-            Ask Epsilon gives you simple “what do I do next?” guidance.
-          </p>
-
-          <div className="mt-6 flex flex-wrap justify-center gap-2 text-xs">
-            <span className="rounded-full bg-white/10 px-3 py-1 ring-1 ring-white/15 text-white/90">Runway</span>
-            <span className="rounded-full bg-white/10 px-3 py-1 ring-1 ring-white/15 text-white/90">Risk</span>
-            <span className="rounded-full bg-white/10 px-3 py-1 ring-1 ring-white/15 text-white/90">Auto-Save</span>
-            <span className="rounded-full bg-white/10 px-3 py-1 ring-1 ring-white/15 text-white/90">Ask Epsilon</span>
-          </div>
-
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
-            <Link
-              href="/dashboard"
-              className="inline-flex h-12 items-center justify-center rounded-full bg-white px-6 text-sm font-semibold text-black transition hover:bg-white/90"
-            >
-              Open Dashboard
-            </Link>
-
-            <Link
-              href="/dashboard"
-              className="inline-flex h-12 items-center justify-center rounded-full bg-white/10 px-6 text-sm font-semibold text-white ring-1 ring-white/15 transition hover:bg-white/15"
-            >
-              Try Ask Epsilon
-            </Link>
-          </div>
-
-          <p className="mt-8 text-xs text-white/45">Demo build — no bank connection yet.</p>
         </main>
       </div>
-
-      {/* Keyframes WITHOUT styled-jsx:
-          Put these in globals.css (one-time). */}
-      {/* NOTE: See instructions below */}
     </div>
   );
 }
