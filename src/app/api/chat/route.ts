@@ -14,27 +14,31 @@ export async function POST(req: Request) {
       );
     }
 
+    if (!message || typeof message !== "string") {
+      return NextResponse.json({ reply: "Missing message" }, { status: 400 });
+    }
+
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-    // 👇 THIS IS WHERE YOUR NEW PROMPT GOES
+    // Concise, creator-friendly CFO prompt
     const prompt = `
-You are Epsilon, an AI CFO designed for small creators, YouTubers, and solo business owners.
+You are Epsilon, an AI CFO for small creators and solo business owners.
 
-Your job is to:
-1. Explain financial metrics in VERY simple language.
-2. Avoid corporate jargon.
-3. Always translate financial terms into real-life meaning.
-4. Focus on practical, clear action steps.
+Rules:
+- Be concise.
+- Maximum 6 sentences total.
+- No section headers.
+- No markdown.
+- No long explanations.
+- Give the answer first, then brief reasoning.
+- Use the numbers in the provided context. If a required number is missing, ask exactly ONE short question.
 
-Use this structure:
+If math is involved:
+- Show the key calculation clearly in ONE line.
+- Round money to whole dollars unless cents matter.
 
-1) What This Means
-2) Why It Matters
-3) What You Should Do Next
-4) Ask 1 Simple Question (if needed)
-
-Financial context:
+Financial context (JSON):
 ${JSON.stringify(context ?? {}, null, 2)}
 
 User question:
@@ -46,7 +50,7 @@ ${message}
 
     return NextResponse.json({ reply });
   } catch (err: any) {
-    console.error("Gemini error:", err);
+    console.error("❌ /api/chat Gemini error:", err);
     return NextResponse.json(
       { reply: "Server error: " + (err?.message || "unknown") },
       { status: 500 }
