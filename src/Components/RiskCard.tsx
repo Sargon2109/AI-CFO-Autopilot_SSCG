@@ -1,13 +1,18 @@
-// src/components/RiskCard.tsx
+"use client";
 
-type RiskLevel = "LOW" | "MEDIUM" | "HIGH";
+import { useMemo } from "react";
+import { useAppStore } from "@/lib/store/AppStore";
+import { calcRunwayDays, calcDepletionDateISO } from "@/lib/finance/cash";
+
+type RiskLevel = "LOW" | "MEDIUM" | "HIGH" | "UNKNOWN";
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
 
-function formatMoney(n: number) {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+function formatMoney(n?: number) {
+  const safe = Number.isFinite(Number(n)) ? Number(n) : 0;
+  return safe.toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
 
 function getRisk(runwayDays: number): {
@@ -42,32 +47,40 @@ function getRisk(runwayDays: number): {
   };
 }
 
-export default function RiskCard(props: {
-  cashBalance: number;
-  monthlyBurn: number;
-  emergencyFundTargetMonths?: number;
-}) {
-  const targetMonths = props.emergencyFundTargetMonths ?? 3;
+export default function RiskCard() {
+  const { cashBalance, monthlyBurn, reserveBalance } = useAppStore();
+  const targetMonths = 3;
 
-  const dailyBurn = props.monthlyBurn / 30;
-  const runwayDays = dailyBurn > 0 ? Math.floor(props.cashBalance / dailyBurn) : 9999;
+  const runwayDays = useMemo(() => calcRunwayDays(cashBalance, monthlyBurn), [cashBalance, monthlyBurn]);
 
-  const emergencyTarget = props.monthlyBurn * targetMonths;
-  const gap = Math.max(0, emergencyTarget - props.cashBalance);
+  const projectedDepletion = useMemo(() => calcDepletionDateISO(runwayDays), [runwayDays]);
 
-  const progressPct =
-    emergencyTarget > 0 ? clamp((props.cashBalance / emergencyTarget) * 100, 0, 100) : 0;
+  const emergencyTarget = useMemo(() => monthlyBurn * targetMonths, [monthlyBurn]);
+  const gap = useMemo(() => Math.max(0, emergencyTarget - reserveBalance), [emergencyTarget, reserveBalance]);
 
-  const risk = getRisk(runwayDays);
+  const progressPct = useMemo(() => {
+    if (emergencyTarget <= 0) return 0;
+    return clamp((reserveBalance / emergencyTarget) * 100, 0, 100);
+  }, [reserveBalance, emergencyTarget]);
+
+  const risk = useMemo(() => {
+    if (runwayDays === null) {
+      return {
+        level: "UNKNOWN" as const,
+        badgeClasses: "bg-slate-100 text-slate-800 ring-1 ring-slate-200",
+        title: "Runway not calculated yet",
+        message: "Enter your monthly burn to estimate runway and risk.",
+      };
+    }
+    return getRisk(runwayDays);
+  }, [runwayDays]);
 
   return (
     <div className="rounded-2xl border bg-white p-6 shadow-sm">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-lg font-semibold text-slate-900">Cash Risk & Alerts</h2>
-          <p className="mt-1 text-sm text-slate-600">
-            Quick read on runway and emergency fund health.
-          </p>
+          <p className="mt-1 text-sm text-slate-600">Quick read on runway and emergency fund health.</p>
         </div>
 
         <span
@@ -81,19 +94,20 @@ export default function RiskCard(props: {
       <div className="mt-6 grid gap-4 sm:grid-cols-3">
         <div className="rounded-xl bg-slate-50 p-4">
           <div className="text-xs font-medium text-slate-600">Cash balance</div>
-          <div className="mt-1 text-xl font-semibold text-slate-900">{formatMoney(props.cashBalance)}</div>
+          <div className="mt-1 text-xl font-semibold text-slate-900">{formatMoney(cashBalance)}</div>
         </div>
 
         <div className="rounded-xl bg-slate-50 p-4">
           <div className="text-xs font-medium text-slate-600">Monthly burn</div>
-          <div className="mt-1 text-xl font-semibold text-slate-900">{formatMoney(props.monthlyBurn)}</div>
+          <div className="mt-1 text-xl font-semibold text-slate-900">{formatMoney(monthlyBurn)}</div>
         </div>
 
         <div className="rounded-xl bg-slate-50 p-4">
           <div className="text-xs font-medium text-slate-600">Estimated runway</div>
           <div className="mt-1 text-xl font-semibold text-slate-900">
-            {runwayDays >= 9999 ? "∞" : `${runwayDays} days`}
+            {runwayDays === null ? "—" : `${runwayDays} days`}
           </div>
+          <div className="mt-1 text-xs text-slate-600">Projected depletion: {projectedDepletion ?? "—"}</div>
         </div>
       </div>
 
@@ -123,10 +137,12 @@ export default function RiskCard(props: {
           </div>
 
           <div className="mt-2 h-2 w-full rounded-full bg-slate-100">
-            <div
-              className="h-2 rounded-full bg-slate-900 transition-[width]"
-              style={{ width: `${progressPct}%` }}
-            />
+            <div className="h-2 rounded-full bg-slate-900 transition-[width]" style={{ width: `${progressPct}%` }} />
+          </div>
+
+          <div className="mt-3 text-xs text-slate-600">
+            Reserve balance: <span className="font-semibold text-slate-900">{formatMoney(reserveBalance)}</span> • Target:{" "}
+            <span className="font-semibold text-slate-900">{formatMoney(emergencyTarget)}</span>
           </div>
         </div>
       </div>
